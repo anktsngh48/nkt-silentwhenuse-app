@@ -11,9 +11,11 @@ object Prefs {
     private const val FILE = "silent_prefs"
     const val KEY_ENABLED = "enabled"
     const val KEY_LAST_EVENT = "last_event"
+    const val KEY_TILE_ADDED = "tile_added"
     private const val KEY_SILENCED_BY_US = "silenced_by_us"
     private const val KEY_SAVED_RINGER_MODE = "saved_ringer_mode"
     private const val KEY_SAVED_FILTER = "saved_interruption_filter"
+    private const val KEY_USER_TOOK_OVER = "user_took_over"
 
     data class SavedSound(val ringerMode: Int, val interruptionFilter: Int)
 
@@ -48,7 +50,19 @@ object Prefs {
     fun clearSilenced(ctx: Context) =
         get(ctx).edit()
             .remove(KEY_SILENCED_BY_US).remove(KEY_SAVED_RINGER_MODE).remove(KEY_SAVED_FILTER)
+            .remove(KEY_USER_TOOK_OVER)
             .commit()
+
+    /** The user changed ringer / Do Not Disturb themselves while we had the phone silenced. */
+    fun setUserTookOver(ctx: Context) =
+        get(ctx).edit().putBoolean(KEY_USER_TOOK_OVER, true).commit()
+
+    fun userTookOver(ctx: Context) = get(ctx).getBoolean(KEY_USER_TOOK_OVER, false)
+
+    fun isTileAdded(ctx: Context) = get(ctx).getBoolean(KEY_TILE_ADDED, false)
+
+    fun setTileAdded(ctx: Context, added: Boolean) =
+        get(ctx).edit().putBoolean(KEY_TILE_ADDED, added).apply()
 
     /** Small "what happened last" line shown in the app, so problems can be spotted without a PC. */
     fun log(ctx: Context, message: String) {

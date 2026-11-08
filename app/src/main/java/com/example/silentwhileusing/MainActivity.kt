@@ -80,6 +80,7 @@ fun MainScreen() {
     var batteryOk by remember { mutableStateOf(ignoresBatteryLimits(context)) }
     var running by remember { mutableStateOf(SilentService.isRunning) }
     var lastEvent by remember { mutableStateOf(Prefs.lastEvent(context)) }
+    var tileAdded by remember { mutableStateOf(Prefs.isTileAdded(context)) }
 
     // Stay in sync with the Quick Settings tile and the service
     DisposableEffect(Unit) {
@@ -88,6 +89,7 @@ fun MainScreen() {
             when (key) {
                 Prefs.KEY_ENABLED -> enabled = p.getBoolean(key, false)
                 Prefs.KEY_LAST_EVENT -> lastEvent = p.getString(key, null)
+                Prefs.KEY_TILE_ADDED -> tileAdded = p.getBoolean(key, false)
             }
             running = SilentService.isRunning
         }
@@ -108,6 +110,7 @@ fun MainScreen() {
                 enabled = Prefs.isEnabled(context)
                 running = SilentService.isRunning
                 lastEvent = Prefs.lastEvent(context)
+                tileAdded = Prefs.isTileAdded(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -150,7 +153,7 @@ fun MainScreen() {
                 onAppSettings = { openAppSettings(context) }
             )
             if (enabled) StatusCard(running = running, lastEvent = lastEvent)
-            TileCard()
+            if (!tileAdded) TileCard()
         }
     }
 }
@@ -284,5 +287,11 @@ private fun requestAddTile(context: Context) {
         context.getString(R.string.tile_label),
         Icon.createWithResource(context, R.drawable.ic_tile),
         context.mainExecutor
-    ) { }
+    ) { result ->
+        if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
+            result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
+        ) {
+            Prefs.setTileAdded(context, true)
+        }
+    }
 }

@@ -11,8 +11,19 @@ import android.service.quicksettings.TileService
 /** The status bar / Quick Settings toggle. */
 class SilenceTileService : TileService() {
 
+    override fun onTileAdded() {
+        super.onTileAdded()
+        Prefs.setTileAdded(this, true)
+    }
+
+    override fun onTileRemoved() {
+        super.onTileRemoved()
+        Prefs.setTileAdded(this, false)
+    }
+
     override fun onStartListening() {
         super.onStartListening()
+        Prefs.setTileAdded(this, true) // only called for a tile that is in Quick Settings
         refreshTile()
     }
 
