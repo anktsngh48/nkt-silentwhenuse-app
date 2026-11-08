@@ -1,0 +1,4 @@
+<resources>
+    <!-- Compose draws the Material 3 UI; this only covers the window before Compose starts -->
+    <style name="Theme.SilentWhileUsing" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

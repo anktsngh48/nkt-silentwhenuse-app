@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">SilentWhenUse</string>
+    <string name="tile_label">SilentWhenUse</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+
+    <string name="toggle_title">Silence while screen is on</string>
+    <string name="toggle_desc_on">Your phone goes silent while you use it and your ringer comes back when the screen turns off.</string>
+    <string name="toggle_desc_off">Turn on to silence the phone whenever you\'re using it.</string>
+
+    <string name="access_title">Do Not Disturb access needed</string>
+    <string name="access_desc">Android only lets apps switch to silent mode after you allow Do Not Disturb access. Find this app in the list and turn it on.</string>
+    <string name="access_button">Grant access</string>
+
+    <string name="tile_card_title">Quick Settings toggle</string>
+    <string name="tile_card_desc">Swipe down twice from the top, tap the edit (pencil) icon, and drag the \"SilentWhenUse\" tile into your toggles, just like the torch.</string>
+    <string name="tile_card_button">Add tile now</string>
+
+    <string name="channel_name">SilentWhenUse</string>
+    <string name="notification_title">SilentWhenUse is on</string>
+    <string name="notification_text">Ringer is silenced while the screen is on</string>
+    <string name="turn_off">Turn off</string>
+</resources>
