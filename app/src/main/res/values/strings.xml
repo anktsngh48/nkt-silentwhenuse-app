@@ -4,8 +4,8 @@
     <string name="on">On</string>
     <string name="off">Off</string>
 
-    <string name="toggle_title">Silence while screen is on</string>
-    <string name="toggle_desc_on">Your phone goes silent while you use it and your ringer comes back when the screen turns off.</string>
+    <string name="toggle_title">Silent while using phone</string>
+    <string name="toggle_desc_on">Your phone stays silent while you\'re using it, and your ringer comes back when you put it down.</string>
     <string name="toggle_desc_off">Turn on to silence the phone whenever you\'re using it.</string>
 
     <string name="access_title">Do Not Disturb access needed</string>
@@ -18,6 +18,6 @@
 
     <string name="channel_name">SilentWhenUse</string>
     <string name="notification_title">SilentWhenUse is on</string>
-    <string name="notification_text">Ringer is silenced while the screen is on</string>
+    <string name="notification_text">Your phone is silent while you\'re using it</string>
     <string name="turn_off">Turn off</string>
 </resources>
