@@ -1,14 +1,19 @@
 package com.example.silentwhileusing
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -20,6 +25,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,30 +51,63 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun ignoresBatteryLimits(context: Context): Boolean =
+    context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+
+@SuppressLint("BatteryLife")
+private fun askToIgnoreBatteryLimits(context: Context) {
+    try {
+        context.startActivity(
+            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
+        )
+    } catch (_: Exception) {
+        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    }
+}
+
+private fun openAppSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
     var enabled by remember { mutableStateOf(Prefs.isEnabled(context)) }
     var hasAccess by remember { mutableStateOf(SilenceController.hasPolicyAccess(context)) }
+    var batteryOk by remember { mutableStateOf(ignoresBatteryLimits(context)) }
+    var running by remember { mutableStateOf(SilentService.isRunning) }
+    var lastEvent by remember { mutableStateOf(Prefs.lastEvent(context)) }
 
-    // Keep the switch in sync when the Quick Settings tile changes the state
+    // Stay in sync with the Quick Settings tile and the service
     DisposableEffect(Unit) {
         val prefs = Prefs.get(context)
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == Prefs.KEY_ENABLED) enabled = p.getBoolean(key, false)
+            when (key) {
+                Prefs.KEY_ENABLED -> enabled = p.getBoolean(key, false)
+                Prefs.KEY_LAST_EVENT -> lastEvent = p.getString(key, null)
+            }
+            running = SilentService.isRunning
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    // Re-check permission when coming back from Settings
+    // Every time the app is opened: refresh, and restart the service if the phone killed it
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasAccess = SilenceController.hasPolicyAccess(context)
+                batteryOk = ignoresBatteryLimits(context)
+                if (Prefs.isEnabled(context) && hasAccess && !SilentService.isRunning) {
+                    SilenceController.setEnabled(context, true)
+                }
                 enabled = Prefs.isEnabled(context)
+                running = SilentService.isRunning
+                lastEvent = Prefs.lastEvent(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -76,7 +116,7 @@ fun MainScreen() {
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* the service works either way; this only makes its notification visible */ }
+    ) { }
 
     val onToggle: (Boolean) -> Unit = { want ->
         if (want && !hasAccess) {
@@ -89,6 +129,7 @@ fun MainScreen() {
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
             enabled = SilenceController.setEnabled(context, want)
+            running = SilentService.isRunning
         }
     }
 
@@ -104,6 +145,11 @@ fun MainScreen() {
         ) {
             MainToggleCard(enabled = enabled, onToggle = onToggle)
             if (!hasAccess) AccessCard { SilenceController.openPolicyAccessSettings(context) }
+            if (!batteryOk) BatteryCard(
+                onAllow = { askToIgnoreBatteryLimits(context) },
+                onAppSettings = { openAppSettings(context) }
+            )
+            if (enabled) StatusCard(running = running, lastEvent = lastEvent)
             TileCard()
         }
     }
@@ -136,7 +182,7 @@ private fun MainToggleCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
                 )
             }
             Spacer(Modifier.width(16.dp))
-            Switch(checked = enabled, onCheckedChange = null) // the whole row handles clicks
+            Switch(checked = enabled, onCheckedChange = null)
         }
     }
 }
@@ -158,6 +204,55 @@ private fun AccessCard(onGrant: () -> Unit) {
             }
             Text(stringResource(R.string.access_desc), style = MaterialTheme.typography.bodyMedium)
             Button(onClick = onGrant) { Text(stringResource(R.string.access_button)) }
+        }
+    }
+}
+
+@Composable
+private fun BatteryCard(onAllow: () -> Unit, onAppSettings: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+        )
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Info, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.battery_title), style = MaterialTheme.typography.titleMedium)
+            }
+            Text(stringResource(R.string.battery_desc), style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onAllow) { Text(stringResource(R.string.battery_button)) }
+                OutlinedButton(onClick = onAppSettings) { Text(stringResource(R.string.app_settings_button)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusCard(running: Boolean, lastEvent: String?) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (running) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(if (running) R.string.status_running else R.string.status_stopped),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+            Text(
+                stringResource(R.string.status_last, lastEvent ?: stringResource(R.string.status_none)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -189,5 +284,5 @@ private fun requestAddTile(context: Context) {
         context.getString(R.string.tile_label),
         Icon.createWithResource(context, R.drawable.ic_tile),
         context.mainExecutor
-    ) { /* result code ignored */ }
+    ) { }
 }

@@ -20,11 +20,8 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Screen on  (and phone unlocked) -> save current ringer mode, switch to silent.
- * Screen off                      -> restore the saved ringer mode.
- *
- * SCREEN_ON / SCREEN_OFF can only be received by a receiver registered at runtime,
- * so a foreground service keeps it alive.
+ * Phone unlocked / in use -> save current sound settings, switch to silent.
+ * Phone put down (screen off) -> restore the saved sound settings.
  */
 class SilentService : Service() {
 
@@ -32,18 +29,22 @@ class SilentService : Service() {
         const val ACTION_DISABLE = "com.example.silentwhileusing.action.DISABLE"
         private const val CHANNEL_ID = "silent_service"
         private const val NOTIFICATION_ID = 1
+
+        /** True while the service is alive in this process (false if the phone killed it). */
+        @Volatile
+        var isRunning = false
+            private set
     }
 
     private lateinit var audio: AudioManager
     private lateinit var keyguard: KeyguardManager
     private lateinit var power: PowerManager
+    private lateinit var notifications: NotificationManager
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                // Screen woke up without a lock screen (e.g. no screen lock set) -> in use
                 Intent.ACTION_SCREEN_ON -> if (!keyguard.isKeyguardLocked) silence()
-                // User unlocked the phone -> in use
                 Intent.ACTION_USER_PRESENT -> silence()
                 Intent.ACTION_SCREEN_OFF -> restore()
             }
@@ -54,9 +55,11 @@ class SilentService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         audio = getSystemService(AudioManager::class.java)
         keyguard = getSystemService(KeyguardManager::class.java)
         power = getSystemService(PowerManager::class.java)
+        notifications = getSystemService(NotificationManager::class.java)
 
         createChannel()
         ServiceCompat.startForeground(
@@ -71,10 +74,10 @@ class SilentService : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         }
-        ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // System broadcasts: register as exported so no OEM permission check can drop them
+        ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
 
-        // The user is almost certainly looking at the phone right now (they just enabled it)
-        if (power.isInteractive && !keyguard.isKeyguardLocked) silence()
+        if (power.isInteractive && !keyguard.isKeyguardLocked) silence() else restore()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -90,29 +93,44 @@ class SilentService : Service() {
     }
 
     override fun onDestroy() {
-        unregisterReceiver(screenReceiver)
+        isRunning = false
+        try { unregisterReceiver(screenReceiver) } catch (_: IllegalArgumentException) {}
         restore() // never leave the phone silenced after turning the feature off
         super.onDestroy()
     }
 
     private fun silence() {
-        if (Prefs.isSilencedByUs(this)) return
-        if (!SilenceController.hasPolicyAccess(this)) return
-        val current = audio.ringerMode
-        if (current == AudioManager.RINGER_MODE_SILENT) return // already silent, nothing to restore later
+        if (!SilenceController.hasPolicyAccess(this)) {
+            Prefs.log(this, "Couldn't silence: Do Not Disturb access is off")
+            return
+        }
         try {
-            Prefs.saveRingerMode(this, current)
+            // Save the user's settings only once per "use", then (re)apply silent every time.
+            // Re-applying fixes phones where the ringer quietly changed back by itself.
+            if (!Prefs.isSilencedByUs(this)) {
+                Prefs.saveSound(this, audio.ringerMode, notifications.currentInterruptionFilter)
+            }
             audio.ringerMode = AudioManager.RINGER_MODE_SILENT
+            Prefs.log(this, "Silenced")
         } catch (e: SecurityException) {
-            Prefs.clearSilenced(this)
+            Prefs.log(this, "Android blocked silencing")
         }
     }
 
     private fun restore() {
-        val saved = Prefs.savedRingerMode(this) ?: return
+        val saved = Prefs.savedSound(this) ?: return
         try {
-            audio.ringerMode = saved
-        } catch (_: SecurityException) {
+            // Silent mode can switch Do Not Disturb on (e.g. Pixel, Samsung). Undo that FIRST,
+            // otherwise Android ignores the request to turn the ringer back on.
+            if (saved.interruptionFilter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN &&
+                notifications.currentInterruptionFilter != saved.interruptionFilter
+            ) {
+                notifications.setInterruptionFilter(saved.interruptionFilter)
+            }
+            audio.ringerMode = saved.ringerMode
+            Prefs.log(this, "Sound restored")
+        } catch (e: SecurityException) {
+            Prefs.log(this, "Android blocked restoring sound")
         }
         Prefs.clearSilenced(this)
     }
@@ -123,7 +141,7 @@ class SilentService : Service() {
             getString(R.string.channel_name),
             NotificationManager.IMPORTANCE_LOW
         ).apply { setShowBadge(false) }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        notifications.createNotificationChannel(channel)
     }
 
     private fun buildNotification(): Notification {

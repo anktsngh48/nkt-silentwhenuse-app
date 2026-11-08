@@ -20,4 +20,13 @@
     <string name="notification_title">SilentWhenUse is on</string>
     <string name="notification_text">Your phone is silent while you\'re using it</string>
     <string name="turn_off">Turn off</string>
+    <string name="battery_title">Keep it working in the background</string>
+    <string name="battery_desc">Your phone may stop SilentWhenUse after you lock it to save battery. Tap Allow and choose \"Allow\" or \"Don\'t optimise\". On Xiaomi, Redmi, Realme, Oppo, Vivo or OnePlus, also open App settings and turn on Autostart and set Battery to \"No restrictions\".</string>
+    <string name="battery_button">Allow</string>
+    <string name="app_settings_button">App settings</string>
+
+    <string name="status_running">Working</string>
+    <string name="status_stopped">Stopped by your phone. Opening the app restarted it.</string>
+    <string name="status_last">Last action: %1$s</string>
+    <string name="status_none">nothing yet</string>
 </resources>
